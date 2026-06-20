@@ -92,6 +92,11 @@ type settings struct {
 	WinCertStoreMatchBy string   `json:"windows_cert_match_by"`
 	WinCertStoreMatch   string   `json:"windows_cert_match"`
 	WinCertStoreCaMatch []string `json:"windows_ca_certs_match"`
+	// OIDC holds the client-side OIDC auth-callout configuration,
+	// including the AWS assume-role chain Context.AWSConfig folds into an
+	// aws.Config. omitempty keeps it out of contexts that do not use it;
+	// see OIDC for the section's fields.
+	OIDC *OIDC `json:"oidc,omitempty"`
 }
 
 type Context struct {
@@ -752,6 +757,12 @@ func (c *Context) Validate() error {
 
 	if c.config.WinCertStoreType != "" && c.config.WinCertStoreMatch == "" {
 		return fmt.Errorf("windows certificate store requires a matcher")
+	}
+
+	if o := c.config.OIDC; o != nil {
+		if err := o.validate(); err != nil {
+			return err
+		}
 	}
 
 	return nil
