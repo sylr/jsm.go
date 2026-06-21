@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -89,13 +90,14 @@ type OIDC struct {
 	// Duration is the requested token lifetime, parsed with
 	// time.ParseDuration (for example "5m"); STS allows 60s..3600s.
 	Duration string `json:"duration,omitempty"`
-	// CachePath, when non-empty, points awsauth at an on-disk cache so
-	// consecutive CLI invocations reuse a minted token instead of calling
-	// STS each time.
-	CachePath string `json:"cache_path,omitempty"`
+	// Cache, when true, enables an on-disk token cache so consecutive CLI
+	// invocations reuse a minted token instead of calling STS each time.
+	// The cache location is managed (a "cache/tokens" sibling of the
+	// context store, keyed by context name); see Context.OIDCTokenCachePath.
+	Cache bool `json:"cache,omitempty"`
 	// CacheRefreshBefore is how close to expiry a cached token may be
 	// before awsauth refreshes it in the background, parsed with
-	// time.ParseDuration (for example "10s"). Ignored when CachePath is empty.
+	// time.ParseDuration (for example "10s"). Ignored when Cache is false.
 	CacheRefreshBefore string `json:"cache_refresh_before,omitempty"`
 }
 
@@ -232,6 +234,29 @@ func WithOIDC(o OIDC) Option {
 // it as read-only.
 func (c *Context) OIDC() *OIDC {
 	return c.config.OIDC
+}
+
+// OIDCTokenCachePath returns the on-disk location where this context's
+// OIDC web-identity token is cached, or "" when the context has no oidc
+// section or caching is disabled (oidc.cache is false). The cache is a
+// "cache/tokens" sibling of the context store, keyed by context name:
+//
+//	<root>/nats/cache/tokens/<name>.jwt
+//
+// mirroring ContextPath's <root>/nats/context/<name>.json so a context's
+// token cache lives alongside the context itself and is removed by name.
+func (c *Context) OIDCTokenCachePath() (string, error) {
+	if c.config == nil || c.config.OIDC == nil || !c.config.OIDC.Cache {
+		return "", nil
+	}
+	if err := ValidateName(c.Name); err != nil {
+		return "", fmt.Errorf("oidc: cannot derive token cache path: %w", err)
+	}
+	root, err := defaultRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "nats", "cache", "tokens", c.Name+".jwt"), nil
 }
 
 // ParsedDuration returns the requested token lifetime as a time.Duration,

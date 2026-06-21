@@ -278,7 +278,7 @@ func TestOIDCParsedAccessors(t *testing.T) {
 		Audience:           "nats://callout",
 		SigningAlgorithm:   "ES384",
 		Duration:           "5m",
-		CachePath:          "/tmp/tok.jwt",
+		Cache:              true,
 		CacheRefreshBefore: "10s",
 	}))
 	if err != nil {
@@ -289,7 +289,7 @@ func TestOIDCParsedAccessors(t *testing.T) {
 	if ac == nil {
 		t.Fatalf("expected oidc")
 	}
-	if ac.Audience != "nats://callout" || ac.SigningAlgorithm != "ES384" || ac.CachePath != "/tmp/tok.jwt" {
+	if ac.Audience != "nats://callout" || ac.SigningAlgorithm != "ES384" || !ac.Cache {
 		t.Fatalf("fields not preserved: %#v", ac)
 	}
 	if d, err := ac.ParsedDuration(); err != nil || d != 5*time.Minute {
@@ -297,6 +297,43 @@ func TestOIDCParsedAccessors(t *testing.T) {
 	}
 	if d, err := ac.ParsedCacheRefreshBefore(); err != nil || d != 10*time.Second {
 		t.Fatalf("ParsedCacheRefreshBefore = %s, %v; want 10s", d, err)
+	}
+}
+
+func TestOIDCTokenCachePath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+
+	// Caching disabled (default) yields no path.
+	off, err := natscontext.New("accache", false, natscontext.WithOIDC(natscontext.OIDC{Audience: "nats://callout"}))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if p, err := off.OIDCTokenCachePath(); err != nil || p != "" {
+		t.Fatalf("cache off: got %q, %v; want \"\"", p, err)
+	}
+
+	// No oidc section at all also yields no path.
+	none, err := natscontext.New("acnone", false)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if p, err := none.OIDCTokenCachePath(); err != nil || p != "" {
+		t.Fatalf("no oidc: got %q, %v; want \"\"", p, err)
+	}
+
+	// Caching enabled yields a per-context path under the context store.
+	on, err := natscontext.New("accache", false, natscontext.WithOIDC(natscontext.OIDC{Audience: "nats://callout", Cache: true}))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	p, err := on.OIDCTokenCachePath()
+	if err != nil {
+		t.Fatalf("cache on: %v", err)
+	}
+	want := root + "/nats/cache/tokens/accache.jwt"
+	if p != want {
+		t.Fatalf("cache on: got %q; want %q", p, want)
 	}
 }
 
